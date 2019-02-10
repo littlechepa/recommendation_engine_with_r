@@ -1,0 +1,80 @@
+---
+title: "Recommendation Engine"
+author: "Venkateswarlu A"
+date: "28 Dec 2017"
+output: pdf_document
+ 
+---
+This `Recommendation Engine` uses `User-Based collaborative filtering` to create similarity matrix between users and recommends movies to customers. This recommendation engine creates `Centered Cosine similarity` matrix of users. Based on the high similarity, it recommends movies to similar user.   
+
+###Packages required for this project
+```{r warning=FALSE,error=FALSE,message=FALSE}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(arules)
+library(caret)
+library(animation)
+library(lsa) #Latent semantic analysis (for cosine function)
+```
+
+```{r echo=FALSE}
+ds <- read.csv(file.choose())
+str(ds)
+ds1 <- ds #Keep the backup
+ds <- ds[-4] #Drop the 4th column as we don't require this
+```
+
+##`User-Based` ***Collaborative Filtering***
+In this collaborative filtering, users are arranged in rows and movies are arranged in columns and cells contains the ratings given by user to a particular movie. After transforming the dataset into required format, row means are calculated for every row. This row mean is nothing but an average rating given by user. Next, every value in the row is substracted by row mean to normalize the ratings and transformed the dataframe as matrix. Used `cosine` function to get similarity matrix.  
+
+```{r results='hide', }
+ubcfm <- spread(ds, key = movieId, value = rating) #Arranging rows as users, columns as movies and ratings are cell values
+str(ubcfm)
+rownames(ubcfm) <- ubcfm[,1] #Changing Row names with user id's
+ubcfm <- ubcfm[-1] #We have transformed row names so the first column is no longer needed
+
+rmeans <- rowMeans(ubcfm,na.rm = TRUE) #To calculate centered cosine, calculate row means
+uccs <- sweep(ubcfm, 1,rmeans,"-") #Created centered cosine by substracting every row value with respective row mean
+uccs[is.na(uccs)] <- 0 #Transform NA's as 0
+
+muccs <- t(as.matrix(uccs)) #Transforming data frame as matrix, cosine will accept vectors or matrix
+
+sim <- cosine(muccs) #Calculating similarity matrix
+sim <- round(sim,3) #Similarity values are having longer decimal numbers, so rouding to 3 decimal point
+```
+
+Once created the similarity matrix, this is the time for predict the recommends. To predict the recommends, identified all the users, who are similar to a customer, to whom we are going to recommend movies. Then again filtered the users, who have given the rating to the movie. Multiplied their rating with the weight, which is nothing but cosine similarity value divided by summation of all the cosine similarities. So, to predict recommendation, I have created a custome funciton, which will take user Id , to which we want to predict as an argument and it will return all the movies which will be liked by the user.
+```{r echo=FALSE}
+recommend_movies <- function(user){
+  
+  sim_users <- as.integer(names(sim[`user`,sim[`user`,] > 0]))[-1]
+  user_not_rated_movies <- as.integer(names(ubcfm[`user`,is.na(ubcfm[`user`,])]))
+  user_not_rated_movies <- user_not_rated_movies[1:200]
+  wr <- vector()
+  svc <- vector()
+  movie <- vector()
+  rating <- vector()
+ 
+   for(i in user_not_rated_movies){
+    for(j in sim_users){
+      if(!is.na(ubcfm[`j`,`i`]))
+        wr <- append(wr, sim[`user`,j]*ubcfm[`j`,`i`], after = length(wr))
+        svc <- append(svc, sim[`user`,j], after = length(svc))
+      
+    }
+    movie <- append(movie, i, after = length(movie))
+    rating <- append(rating, sum(wr)/sum(svc), after = length(rating))
+    
+   }
+  result <- data.frame(movie,rating)
+  result <- result %>%
+              arrange(desc(rating))
+  return(result)
+}
+```
+Let's say recommend movies for user Id `15`. The function will return rating along with movie id. Whichever movies' rating would be high those movies will be recommended to a user.
+```{r warning=FALSE}
+
+recommend_movies(15)
+```
